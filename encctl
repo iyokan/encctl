@@ -1,0 +1,175 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+use File::Basename;
+use File::Find;
+use Getopt::Long;
+use Data::Dumper;
+
+my %sysfs;
+
+my $usage = <<EOF;
+
+- Configure vdev_id.conf(5)
+
+    encctl --configure | tee /etc/zfs/vdev_id.conf.tmp
+    diff -u /etc/zfs/vdev_id.conf{,.tmp} # if necessary
+    mv /etc/zfs/vdev_id.conf{.tmp,}
+    udevadm trigger
+    ls -l /dev/disk/by-path
+
+- Show expander topology
+
+    encctl --topology
+
+- Show slot status
+
+    encctl --show
+
+- Locate a disk drive on an enclosure
+
+    encctl --locate 3:0:0       # locate 3:0:0
+    encctl --locate 3:0         # locate 3:0:*
+    encctl --locate all         # locate *:*:*
+    encctl --locate_off 3:0:0   # unlocate 3:0:0
+    encctl --locate_off 3:0     # unlocate 3:0:*
+    encctl --locate_off all     # unlocate *:*:*
+
+EOF
+
+sub sort_alias {
+    return sort { ( split /:/, $a )[0] <=> ( split /:/, $b )[0] }
+        sort    { ( split /:/, $a )[1] <=> ( split /:/, $b )[1] }
+        sort    { ( split /:/, $a )[2] <=> ( split /:/, $b )[2] } @_;
+}
+
+sub prepare {
+    m{^Slot (\d+)\z} or return;
+    my $slot = $1 - 1;    # backplane's slot number began 0
+    $File::Find::dir =~ m{.*/expander-(\d+:\d+)} or return;
+    my $enc = $1;
+    $sysfs{"$enc:$slot"} = $File::Find::name;
+}
+
+sub topology {
+    $File::Find::name =~ m{/port-[\d:]+/expander-[\d:]+\z} or return;
+    my @topology = $File::Find::name =~ m{/expander-([\d:]+)}g
+        or return;
+    print join( " -> ", @topology ), "\n";
+}
+
+my %opt;
+
+GetOptions(
+    "configure"        => \$opt{configure},
+    "topology"         => \$opt{topology},
+    "show"             => \$opt{show},
+    "status"           => \$opt{status},
+    "locate=s{1,}"     => \@{ $opt{locate} },
+    "locate_off=s{1,}" => \@{ $opt{locate_off} },
+) or die("$usage");
+
+{
+    my @check;
+    foreach ( sort keys %opt ) {
+        if ( ref $opt{$_} ) {
+            push @check, $_ if @{ $opt{$_} } > 0;
+        }
+        elsif ( defined $opt{$_} ) {
+            push @check, $_;
+        }
+    }
+    if ( @check > 1 ) {
+        die sprintf "$0: multiple option [%s] specifed.\n", join ", ", @check;
+    }
+}
+
+if ( $opt{configure} ) {
+    find( \&prepare, "/sys/devices" );
+    foreach ( sort_alias keys %sysfs ) {
+        my $pci = ( split m{/}, $sysfs{$_} )[5];
+        chomp( my $sas_address = qx{cat '$sysfs{$_}/device/sas_address'} );
+        printf "alias %s\tpci-%s-sas-%s-lun-0\n", $_, $pci, $sas_address;
+    }
+}
+elsif ( $opt{topology} ) {
+    find( \&topology, "/sys/devices" );
+}
+elsif ( $opt{show} ) {
+    find( \&prepare, "/sys/devices" );
+    foreach ( sort_alias keys %sysfs ) {
+        chomp( my $active = qx{cat '$sysfs{$_}/active'} );
+        chomp( my $fault  = qx{cat '$sysfs{$_}/fault'} );
+        chomp( my $locate = qx{cat '$sysfs{$_}/locate'} );
+        chomp( my $status = qx{cat '$sysfs{$_}/status'} );
+        printf "%s\tactive => %s\tfault => %s\tlocate => %s\tstatus => %s\n",
+            $_,
+            $active, $fault, $locate, $status;
+    }
+}
+elsif ( @{ $opt{locate} } ) {
+    my @target;
+    find( \&prepare, "/sys/devices" );
+    foreach ( @{ $opt{locate} } ) {
+        my $quotemeta = quotemeta;
+        if ( exists $sysfs{$_} ) {
+            push @target, $_;
+        }
+        elsif ( grep {/^$quotemeta:/} keys %sysfs ) {
+            push @target, grep {/^$quotemeta:/} sort_alias keys %sysfs;
+        }
+        elsif ( $_ eq 'all' ) {
+            @target = sort_alias keys %sysfs;
+            last;
+        }
+        else {
+            die "$_ is not exists\n";
+        }
+    }
+    foreach (@target) {
+        my $file = "$sysfs{$_}/locate";
+        if ( -w $file ) {
+            open my $fh, '>', $file or die;
+            print "$_ => 1\n";
+            print $fh 1;
+        }
+        else {
+            print STDERR "Can't write to $file\n";
+        }
+    }
+}
+elsif ( @{ $opt{locate_off} } ) {
+    my @target;
+    find( \&prepare, "/sys/devices" );
+    foreach ( @{ $opt{locate_off} } ) {
+        my $quotemeta = quotemeta;
+        if ( exists $sysfs{$_} ) {
+            push @target, $_;
+        }
+        elsif ( grep {/^$quotemeta:/} keys %sysfs ) {
+            push @target, grep {/^$quotemeta:/} sort_alias keys %sysfs;
+        }
+        elsif ( $_ eq 'all' ) {
+            @target = sort_alias keys %sysfs;
+            last;
+        }
+        else {
+            die "$_ is not exists\n";
+        }
+    }
+    foreach (@target) {
+        my $file = "$sysfs{$_}/locate";
+        if ( -w $file ) {
+            open my $fh, '>', $file or die;
+            print "$_ => 0\n";
+            print $fh 0;
+        }
+        else {
+            print STDERR "Can't write to $file\n";
+        }
+    }
+}
+else {
+    print $usage;
+}
