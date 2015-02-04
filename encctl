@@ -27,6 +27,10 @@ my $usage = <<EOF;
 
     encctl --show
 
+- Show S.M.A.R.T attribute
+
+    encctl --smart
+
 - Locate a disk drive on an enclosure
 
     encctl --locate 3:0:0       # locate 3:0:0
@@ -65,7 +69,7 @@ GetOptions(
     "configure"        => \$opt{configure},
     "topology"         => \$opt{topology},
     "show"             => \$opt{show},
-    "smart"           => \$opt{smart},
+    "smart"            => \$opt{smart},
     "locate=s{1,}"     => \@{ $opt{locate} },
     "locate_off=s{1,}" => \@{ $opt{locate_off} },
 ) or die("$usage");
@@ -110,18 +114,23 @@ elsif ( $opt{show} ) {
 }
 elsif ( $opt{smart} ) {
     find( \&prepare, "/sys/devices" );
-    my @target = qw/Reallocated_Sector_Ct Reported_Uncorrect Command_Timeout Current_Pending_Sector Offline_Uncorrectable/;
+    my @target
+        = qw/Reallocated_Sector_Ct Reported_Uncorrect Command_Timeout Current_Pending_Sector Offline_Uncorrectable/;
     print "NAME\t", join " ", @target, "\n";
     foreach ( sort_alias keys %sysfs ) {
-        if (opendir my $dh, "$sysfs{$_}/device/block") {
+        if ( opendir my $dh, "$sysfs{$_}/device/block" ) {
             my ($dev) = grep {/^sd/} readdir $dh or next;
-            chomp (my @smartctl = qx{smartctl -A /dev/$dev 2> /dev/null});
-            map { s/^\s+// } @smartctl;
-            my %attr = map { (split /\s+/, $_, 10)[1,9] } @smartctl;
+            chomp( my @smartctl = qx{smartctl -A /dev/$dev 2> /dev/null} );
+            map {s/^\s+//} @smartctl;
+            my %attr = map { ( split /\s+/, $_, 10 )[ 1, 9 ] } @smartctl;
             print "$_\t";
             foreach my $target (@target) {
                 print defined $attr{$target} ? $attr{$target} : "N/A";
-                print " " x (1 + length($target) - length(defined $attr{$target} ? $attr{$target} : "N/A"));
+                print " " x (
+                    1 + length($target) - length(
+                        defined $attr{$target} ? $attr{$target} : "N/A"
+                    )
+                );
             }
             print "\n";
         }
