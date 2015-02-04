@@ -65,7 +65,7 @@ GetOptions(
     "configure"        => \$opt{configure},
     "topology"         => \$opt{topology},
     "show"             => \$opt{show},
-    "status"           => \$opt{status},
+    "smart"           => \$opt{smart},
     "locate=s{1,}"     => \@{ $opt{locate} },
     "locate_off=s{1,}" => \@{ $opt{locate_off} },
 ) or die("$usage");
@@ -106,6 +106,25 @@ elsif ( $opt{show} ) {
         printf "%s\tactive => %s\tfault => %s\tlocate => %s\tstatus => %s\n",
             $_,
             $active, $fault, $locate, $status;
+    }
+}
+elsif ( $opt{smart} ) {
+    find( \&prepare, "/sys/devices" );
+    my @target = qw/Reallocated_Sector_Ct Reported_Uncorrect Command_Timeout Current_Pending_Sector Offline_Uncorrectable/;
+    print "NAME\t", join " ", @target, "\n";
+    foreach ( sort_alias keys %sysfs ) {
+        if (opendir my $dh, "$sysfs{$_}/device/block") {
+            my ($dev) = grep {/^sd/} readdir $dh or next;
+            chomp (my @smartctl = qx{smartctl -A /dev/$dev 2> /dev/null});
+            map { s/^\s+// } @smartctl;
+            my %attr = map { (split /\s+/, $_, 10)[1,9] } @smartctl;
+            print "$_\t";
+            foreach my $target (@target) {
+                print defined $attr{$target} ? $attr{$target} : "N/A";
+                print " " x (1 + length($target) - length(defined $attr{$target} ? $attr{$target} : "N/A"));
+            }
+            print "\n";
+        }
     }
 }
 elsif ( @{ $opt{locate} } ) {
