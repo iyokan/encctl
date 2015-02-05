@@ -95,8 +95,7 @@ if ( $opt{configure} ) {
     find( \&prepare, "/sys/devices" );
     foreach ( sort_alias keys %sysfs ) {
         my $pci = ( split m{/}, $sysfs{$_} )[5];
-        my ($sas_address)
-            = read_file( "$sysfs{$_}/device/sas_address", chomp => 1 );
+        chomp( my $sas_address = read_file("$sysfs{$_}/device/sas_address") );
         printf "alias %s\tpci-%s-sas-%s-lun-0\n", $_, $pci, $sas_address;
     }
 }
@@ -106,12 +105,12 @@ elsif ( $opt{topology} ) {
 elsif ( $opt{show} ) {
     find( \&prepare, "/sys/devices" );
     foreach ( sort_alias keys %sysfs ) {
+        chomp( my $active = read_file("$sysfs{$_}/active") );
+        chomp( my $fault  = read_file("$sysfs{$_}/fault") );
+        chomp( my $locate = read_file("$sysfs{$_}/locate") );
+        chomp( my $status = read_file("$sysfs{$_}/status") );
         printf "%s\tactive => %s\tfault => %s\tlocate => %s\tstatus => %s\n",
-            $_,
-            read_file( "$sysfs{$_}/active", chomp => 1 ),
-            read_file( "$sysfs{$_}/fault",  chomp => 1 ),
-            read_file( "$sysfs{$_}/locate", chomp => 1 ),
-            read_file( "$sysfs{$_}/status", chomp => 1 );
+            $_, $active, $fault, $locate, $status;
     }
 }
 elsif ( $opt{smart} ) {
