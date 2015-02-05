@@ -1,11 +1,13 @@
 #!/usr/bin/perl
 
-use warnings;
 use strict;
+use warnings;
+
+use Data::Dumper;
 use File::Basename;
 use File::Find;
+use File::Slurp;    # perl-File-Slurp
 use Getopt::Long;
-use Data::Dumper;
 
 my %sysfs;
 
@@ -93,7 +95,8 @@ if ( $opt{configure} ) {
     find( \&prepare, "/sys/devices" );
     foreach ( sort_alias keys %sysfs ) {
         my $pci = ( split m{/}, $sysfs{$_} )[5];
-        chomp( my $sas_address = qx{cat '$sysfs{$_}/device/sas_address'} );
+        my ($sas_address)
+            = read_file( "$sysfs{$_}/device/sas_address", chomp => 1 );
         printf "alias %s\tpci-%s-sas-%s-lun-0\n", $_, $pci, $sas_address;
     }
 }
@@ -103,13 +106,12 @@ elsif ( $opt{topology} ) {
 elsif ( $opt{show} ) {
     find( \&prepare, "/sys/devices" );
     foreach ( sort_alias keys %sysfs ) {
-        chomp( my $active = qx{cat '$sysfs{$_}/active'} );
-        chomp( my $fault  = qx{cat '$sysfs{$_}/fault'} );
-        chomp( my $locate = qx{cat '$sysfs{$_}/locate'} );
-        chomp( my $status = qx{cat '$sysfs{$_}/status'} );
         printf "%s\tactive => %s\tfault => %s\tlocate => %s\tstatus => %s\n",
             $_,
-            $active, $fault, $locate, $status;
+            read_file( "$sysfs{$_}/active", chomp => 1 ),
+            read_file( "$sysfs{$_}/fault",  chomp => 1 ),
+            read_file( "$sysfs{$_}/locate", chomp => 1 ),
+            read_file( "$sysfs{$_}/status", chomp => 1 );
     }
 }
 elsif ( $opt{smart} ) {
@@ -156,14 +158,12 @@ elsif ( @{ $opt{locate} } ) {
         }
     }
     foreach (@target) {
-        my $file = "$sysfs{$_}/locate";
-        if ( -w $file ) {
-            open my $fh, '>', $file or die;
+        my $filename = "$sysfs{$_}/locate";
+        if ( write_file( $filename, 1 ) ) {
             print "$_ => 1\n";
-            print $fh 1;
         }
         else {
-            print STDERR "Can't write to $file\n";
+            print STDERR "Can't write to $filename\n";
         }
     }
 }
@@ -187,14 +187,12 @@ elsif ( @{ $opt{locate_off} } ) {
         }
     }
     foreach (@target) {
-        my $file = "$sysfs{$_}/locate";
-        if ( -w $file ) {
-            open my $fh, '>', $file or die;
+        my $filename = "$sysfs{$_}/locate";
+        if ( write_file( $filename, 0 ) ) {
             print "$_ => 0\n";
-            print $fh 0;
         }
         else {
-            print STDERR "Can't write to $file\n";
+            print STDERR "Can't write to $filename\n";
         }
     }
 }
