@@ -53,8 +53,8 @@ sub sort_alias {
 sub prepare {
     m{^Slot (\d+)\z} or return;
     my $slot = $1 - 1;    # backplane's slot number began 0
-    $File::Find::dir =~ m{.*/expander-(\d+:\d+)} or return;
-    my $enc = $1;
+    $File::Find::dir =~ m{0000:0*(\d+):00\.0/host\d+/.*/expander-\d+:(\d+)} or return;
+    my $enc = "$1:$2";
     $sysfs{"$enc:$slot"} = $File::Find::name;
 }
 
