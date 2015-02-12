@@ -6,8 +6,9 @@ use warnings;
 use Data::Dumper;
 use File::Basename;
 use File::Find;
-use File::Slurp;    # perl-File-Slurp
+use File::Slurp;              # perl-File-Slurp
 use Getopt::Long;
+use Parallel::ForkManager;    # perl-Parallel-ForkManager
 
 my %sysfs;
 
@@ -116,29 +117,39 @@ elsif ( $opt{show} ) {
 }
 elsif ( $opt{smart} ) {
     find( \&prepare, "/sys/devices" );
+
+    my $pm = Parallel::ForkManager->new(8);
+    my %SMART_Attributes;
+    $pm->run_on_finish(
+        sub { %SMART_Attributes = ( %SMART_Attributes, @_[ 2, 5 ] ) } );
+    foreach ( keys %sysfs ) {
+        opendir my $dh, "$sysfs{$_}/device/block" or next;
+        my ($dev) = grep {/^sd/} readdir $dh or next;
+
+        # Forks and returns the pid for the child:
+        my $pid = $pm->start($_) and next;
+        chomp( my @smartctl = qx{smartctl -A /dev/$dev 2> /dev/null} );
+        $pm->finish( $?, \@smartctl );    # Terminates the child process
+    }
+    $pm->wait_all_children;
+
     my @target
         = qw/Reallocated_Sector_Ct Reported_Uncorrect Command_Timeout Current_Pending_Sector Offline_Uncorrectable/;
     print "NAME\t", join " ", @target, "\n";
-    foreach ( sort_alias keys %sysfs ) {
-        if ( opendir my $dh, "$sysfs{$_}/device/block" ) {
-            my ($dev) = grep {/^sd/} readdir $dh or next;
-            chomp( my @smartctl = qx{smartctl -A /dev/$dev 2> /dev/null} );
-            map {s/^\s+//} @smartctl;
-            my %attr = map { ( split /\s+/, $_, 10 )[ 1, 9 ] } @smartctl;
-            print "$_\t";
-            foreach my $target (@target) {
-                print defined $attr{$target} ? $attr{$target} : "N/A";
-                print " " x (
-                    1 + length($target) - length(
-                        defined $attr{$target} ? $attr{$target} : "N/A"
-                    )
-                );
-            }
-            print "\n";
+    foreach ( sort_alias keys %SMART_Attributes ) {
+        map {s/^\s+//} @{ $SMART_Attributes{$_} };
+        my %attr = map { ( split /\s+/, $_, 10 )[ 1, 9 ] }
+            @{ $SMART_Attributes{$_} };
+        print "$_\t";
+        foreach my $target (@target) {
+            my $value = defined $attr{$target} ? $attr{$target} : "N/A";
+            print $value;
+            print " " x ( 1 + length($target) - length($value) );
         }
+        print "\n";
     }
 }
-elsif ( @{ $opt{locate} } ) {
+ elsif ( @{ $opt{locate} } ) {
     my @target;
     find( \&prepare, "/sys/devices" );
     foreach ( @{ $opt{locate} } ) {
