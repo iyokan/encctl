@@ -128,7 +128,7 @@ elsif ( $opt{smart} ) {
 
         # Forks and returns the pid for the child:
         my $pid = $pm->start($_) and next;
-        chomp( my @smartctl = qx{smartctl -A /dev/$dev 2> /dev/null} );
+        chomp( my @smartctl = qx{exec smartctl -A /dev/$dev 2> /dev/null} );
         $pm->finish( $?, \@smartctl );    # Terminates the child process
     }
     $pm->wait_all_children;
