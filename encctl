@@ -63,7 +63,7 @@ sub topology {
     $File::Find::name =~ m{/port-[\d:]+/expander-[\d:]+\z} or return;
     my @topology = $File::Find::name =~ m{/expander-\d:([\d:]+)}g or return;
     my ($bus) = $File::Find::name =~ m{/0000:0*(\d+):00\.0/host\d+/} or return;
-    map {s/^/bus:/} @topology;
+    map {s/^/$bus:/} @topology;
     print join( " -> ", @topology ), "\n";
 }
 
