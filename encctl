@@ -74,6 +74,7 @@ GetOptions(
     "topology"         => \$opt{topology},
     "show"             => \$opt{show},
     "smart"            => \$opt{smart},
+    "smarterror"       => \$opt{smarterror},
     "locate=s{1,}"     => \@{ $opt{locate} },
     "locate_off=s{1,}" => \@{ $opt{locate_off} },
 ) or die("$usage");
@@ -149,7 +150,36 @@ elsif ( $opt{smart} ) {
         print "\n";
     }
 }
- elsif ( @{ $opt{locate} } ) {
+elsif ( $opt{smarterror} ) {
+    find( \&prepare, "/sys/devices" );
+    foreach ( sort_alias keys %sysfs ) {
+        if ( opendir my $dh, "$sysfs{$_}/device/block" ) {
+            my ($dev) = grep {/^sd/} readdir $dh or next;
+            my $cmd = "smartctl -A -l error /dev/$dev";
+            print "$_\t$cmd\n";
+            my @error = qx{$cmd 2> /dev/null};
+            if ( $? >> 8 && 2**6 ) {
+                map {s/^/\t/mg} @error;
+                my ( $pow, $echo );
+                foreach (@error) {
+                    if (/Power_On_Hours.*\s(\d+)/) {
+                        $pow = $1;
+                        next;
+                    }
+                    if (/power-on lifetime: (\d+) hours/) {
+                        if ( $1 > $pow - 24 * 7 ) {
+                            $echo = 1;
+                        } else {
+                            $echo = 0;
+                        }
+                    }
+                    print if $echo;
+                }
+            }
+        }
+    }
+}
+elsif ( @{ $opt{locate} } ) {
     my @target;
     find( \&prepare, "/sys/devices" );
     foreach ( @{ $opt{locate} } ) {
