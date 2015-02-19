@@ -151,7 +151,7 @@ elsif ( $opt{smart} ) {
         foreach my $target (@target) {
             my $value = defined $attr{$target} ? $attr{$target} : "N/A";
             if ( -t STDOUT && $attr{$target} ) {
-                print RED, $value, RESET;
+                print BRIGHT_RED $value, RESET;
             }
             else {
                 print $value;
