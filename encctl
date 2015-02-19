@@ -9,6 +9,7 @@ use File::Find;
 use File::Slurp;              # perl-File-Slurp
 use Getopt::Long;
 use Parallel::ForkManager;    # perl-Parallel-ForkManager
+use Term::ANSIColor qw(:constants);
 
 my %sysfs;
 
@@ -33,6 +34,10 @@ my $usage = <<EOF;
 - Show S.M.A.R.T attribute
 
     encctl --smart
+
+- Show S.M.A.R.T error log in N days.
+
+    encctl --smarterror N
 
 - Locate a disk drive on an enclosure
 
@@ -74,7 +79,7 @@ GetOptions(
     "topology"         => \$opt{topology},
     "show"             => \$opt{show},
     "smart"            => \$opt{smart},
-    "smarterror"       => \$opt{smarterror},
+    "smarterror=i"     => \$opt{smarterror},
     "locate=s{1,}"     => \@{ $opt{locate} },
     "locate_off=s{1,}" => \@{ $opt{locate_off} },
 ) or die("$usage");
@@ -123,7 +128,8 @@ elsif ( $opt{smart} ) {
     my %SMART_Attributes;
     $pm->run_on_finish(
         sub { %SMART_Attributes = ( %SMART_Attributes, @_[ 2, 5 ] ) } );
-    foreach ( keys %sysfs ) {
+    $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
+    foreach ( sort_alias keys %sysfs ) {
         opendir my $dh, "$sysfs{$_}/device/block" or next;
         my ($dev) = grep {/^sd/} readdir $dh or next;
 
@@ -144,39 +150,64 @@ elsif ( $opt{smart} ) {
         print "$_\t";
         foreach my $target (@target) {
             my $value = defined $attr{$target} ? $attr{$target} : "N/A";
-            print $value;
+            if ( -t STDOUT && $attr{$target} ) {
+                print RED, $value, RESET;
+            }
+            else {
+                print $value;
+            }
             print " " x ( 1 + length($target) - length($value) );
         }
         print "\n";
     }
 }
+
 elsif ( $opt{smarterror} ) {
     find( \&prepare, "/sys/devices" );
+
+    my $pm = Parallel::ForkManager->new(8);
+    my %output;
+    $pm->run_on_finish( sub { %output = ( %output, @_[ 2, 5 ] ) } );
+    $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
+
     foreach ( sort_alias keys %sysfs ) {
-        if ( opendir my $dh, "$sysfs{$_}/device/block" ) {
-            my ($dev) = grep {/^sd/} readdir $dh or next;
-            my $cmd = "smartctl -A -l error /dev/$dev";
-            print "$_\t$cmd\n";
-            my @error = qx{$cmd 2> /dev/null};
-            if ( $? >> 8 && 2**6 ) {
-                map {s/^/\t/mg} @error;
-                my ( $pow, $echo );
-                foreach (@error) {
-                    if (/Power_On_Hours.*\s(\d+)/) {
-                        $pow = $1;
-                        next;
-                    }
-                    if (/power-on lifetime: (\d+) hours/) {
-                        if ( $1 > $pow - 24 * 7 ) {
-                            $echo = 1;
-                        } else {
-                            $echo = 0;
-                        }
-                    }
-                    print if $echo;
+        opendir my $dh, "$sysfs{$_}/device/block" or next;
+        my ($dev) = grep {/^sd/} readdir $dh or next;
+
+        # Forks and returns the pid for the child:
+        my $pid      = $pm->start($_) and next;
+        my $cmd      = "smartctl -A -l error /dev/$dev";
+        my $output   = "$_\t$cmd\n";
+        my @smartctl = qx{$cmd 2> /dev/null};
+        if ( $? >> 8 && 2**6 ) {
+            map {s/^/\t/mg} @smartctl;
+            my ( $pow, $echo );
+            foreach (@smartctl) {
+                if (/Power_On_Hours.*\s(\d+)/) {
+                    $pow = $1;
+                    $output
+                        .= sprintf
+                        "\n\tPower_On_Hours => %d hours (%d days + %d hours)\n\n",
+                        $pow, $pow / 24, $pow % 24;
+                    next;
                 }
+                if (/power-on lifetime: (\d+) hours/) {
+                    if ( $1 > $pow - 24 * $opt{smarterror} ) {
+                        $echo = 1;
+                    }
+                    else {
+                        $echo = 0;
+                    }
+                }
+                $output .= $_ if $echo;
             }
         }
+        $pm->finish( $?, \$output );    # Terminates the child process
+    }
+    $pm->wait_all_children;
+
+    foreach ( sort_alias keys %output ) {
+        print ${ $output{$_} };
     }
 }
 elsif ( @{ $opt{locate} } ) {
