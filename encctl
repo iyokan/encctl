@@ -176,18 +176,22 @@ elsif ( $opt{smarterror} ) {
 
         # Forks and returns the pid for the child:
         my $pid      = $pm->start($_) and next;
-        my $cmd      = "smartctl -A -l error /dev/$dev";
-        my $output   = "$_\t$cmd\n";
+        my $cmd      = "smartctl -i -A -l error /dev/$dev";
+        my @output   = ("$_\t$cmd\n");
         my @smartctl = qx{$cmd 2> /dev/null};
         if ( $? >> 8 && 2**6 ) {
+            push @output, "\n";
             map {s/^/\t/mg} @smartctl;
             my ( $pow, $echo );
             foreach (@smartctl) {
+                if (/^\t(?:Device Model|Serial Number):/) {
+                    push @output, $_;
+                    next;
+                }
                 if (/Power_On_Hours.*\s(\d+)/) {
                     $pow = $1;
-                    $output
-                        .= sprintf
-                        "\n\tPower_On_Hours => %d hours (%d days + %d hours)\n\n",
+                    push @output,
+                        sprintf "\n\tPower_On_Hours: %d hours (%d days + %d hours)\n\n",
                         $pow, $pow / 24, $pow % 24;
                     next;
                 }
@@ -199,15 +203,16 @@ elsif ( $opt{smarterror} ) {
                         $echo = 0;
                     }
                 }
-                $output .= $_ if $echo;
+                push @output, $_ if $echo;
             }
+            splice @output, 1, unless grep {/power-on lifetime:/} @output;
         }
-        $pm->finish( $?, \$output );    # Terminates the child process
+        $pm->finish( $?, \@output );    # Terminates the child process
     }
     $pm->wait_all_children;
 
     foreach ( sort_alias keys %output ) {
-        print ${ $output{$_} };
+        print @{ $output{$_} };
     }
 }
 elsif ( @{ $opt{locate} } ) {
