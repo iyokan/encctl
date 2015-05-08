@@ -30,54 +30,54 @@ See http://zfsonlinux.org/epel.html
 
 + setup multipath as needed
 
-  # mpathconf --enable --with_multipathd y
+ \# mpathconf --enable --with_multipathd y
 
 + install encctl
 
-  # make install
+ \# make install
 
 + reload udev rules
 
-  # make reload
+ \# make reload
 
 + check vdev alias
 
-  # ls -l /dev/disk/by-vdev
+ \# ls -l /dev/disk/by-vdev
 
 + create zpool
 
 ++ mirror pool
 
-  # echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} | xargs -n 2 echo mirror`
-  # echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} | xargs -n 2 echo mirror` | sh -x
+ \# echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} | xargs -n 2 echo mirror`
+ \# echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} | xargs -n 2 echo mirror` | sh -x
 
 ++ raidz2 pool
 
-  # echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} 0xYYYYYYYYYYYYYYYY:{0..11} | xargs -n 6 echo raidz2`
-  # echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} 0xYYYYYYYYYYYYYYYY:{0..11} | xargs -n 6 echo raidz2` | sh -x
+ \# echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} 0xYYYYYYYYYYYYYYYY:{0..11} | xargs -n 6 echo raidz2`
+ \# echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} 0xYYYYYYYYYYYYYYYY:{0..11} | xargs -n 6 echo raidz2` | sh -x
 
 ## Usage
 
 + check enclosure status
 
-  # encctl --show
+ \# encctl --show
 
 + check disk SMART
 
 ++ for SATA devices
 
-  # encctl --smart
-  # encctl --smarterror 30 (check last 30 days error)
+ \# encctl --smart
+ \# encctl --smarterror 30 (check last 30 days error)
 
 ++ for SAS devices
 
-  # encctl --unc
+ \# encctl --unc
 
 + locate indicator
 
-  # encctl --locate 0xXXXXXXXXXXXXXXXX:0     # locate 0xXXXXXXXXXXXXXXXX:0
-  # encctl --locate 0xXXXXXXXXXXXXXXXX       # locate 0xXXXXXXXXXXXXXXXX:*
-  # encctl --locate all                      # locate *:*
-  # encctl --locate_off 0xXXXXXXXXXXXXXXXX:0 # unlocate 0xXXXXXXXXXXXXXXXX:0
-  # encctl --locate_off 0xXXXXXXXXXXXXXXXX   # unlocate 0xXXXXXXXXXXXXXXXX:*
-  # encctl --locate_off all                  # unlocate *:*
+ \# encctl --locate 0xXXXXXXXXXXXXXXXX:0     # locate 0xXXXXXXXXXXXXXXXX:0
+ \# encctl --locate 0xXXXXXXXXXXXXXXXX       # locate 0xXXXXXXXXXXXXXXXX:*
+ \# encctl --locate all                      # locate *:*
+ \# encctl --locate_off 0xXXXXXXXXXXXXXXXX:0 # unlocate 0xXXXXXXXXXXXXXXXX:0
+ \# encctl --locate_off 0xXXXXXXXXXXXXXXXX   # unlocate 0xXXXXXXXXXXXXXXXX:*
+ \# encctl --locate_off all                  # unlocate *:*
