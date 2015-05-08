@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Data::Dumper;
+use Cwd 'abs_path';
 use File::Basename;
 use File::Find;
 use File::Slurp;              # perl-File-Slurp
@@ -11,17 +11,7 @@ use Getopt::Long;
 use Parallel::ForkManager;    # perl-Parallel-ForkManager
 use Term::ANSIColor qw(:constants);
 
-my %sysfs;
-
 my $usage = <<EOF;
-
-- Configure vdev_id.conf(5)
-
-    encctl --configure | tee /etc/zfs/vdev_id.conf.tmp
-    diff -u /etc/zfs/vdev_id.conf{,.tmp} # if necessary
-    mv /etc/zfs/vdev_id.conf{.tmp,}
-    udevadm trigger
-    ls -l /dev/disk/by-path
 
 - Show expander topology
 
@@ -31,13 +21,17 @@ my $usage = <<EOF;
 
     encctl --show
 
-- Show S.M.A.R.T attribute
+- Show S.M.A.R.T attribute (SATA)
 
     encctl --smart
 
-- Show S.M.A.R.T error log in N days.
+- Show S.M.A.R.T error log in N days. (SATA)
 
     encctl --smarterror N
+
+- Check Total uncorrected errors (SAS)
+
+    encctl --unc
 
 - Locate a disk drive on an enclosure
 
@@ -51,35 +45,47 @@ my $usage = <<EOF;
 EOF
 
 sub sort_alias {
-    return sort { ( split /:/, $a )[0] <=> ( split /:/, $b )[0] }
-        sort    { ( split /:/, $a )[1] <=> ( split /:/, $b )[1] }
-        sort    { ( split /:/, $a )[2] <=> ( split /:/, $b )[2] } @_;
+    return sort { ( split /:/, $a )[0] cmp( split /:/, $b )[0] }
+        sort { ( split /:/, $a )[1] <=> ( split /:/, $b )[1] } @_;
 }
+
+my %sysfs;
 
 sub prepare {
-    m{^Slot (\d+)\z} or return;
-    my $slot = $1 - 1;    # backplane's slot number began 0
-    $File::Find::dir =~ m{0000:0*(\d+):00\.0/host\d+/.*/expander-\d+:(\d+)} or return;
-    my $enc = "$1:$2";
-    $sysfs{"$enc:$slot"} = $File::Find::name;
+    my $slot;
+    if (m{^Slot (\d+)\z}) {
+        $slot = $1 - 1;    # Supermicro SAS2
+    }
+    elsif (m{^Slot0*(\d+)\z}) {
+        $slot = $1;        # Supermicro SAS3
+    }
+    else {
+        return;
+    }
+    $File::Find::dir =~ m{(.*(end_device-[\d:]+))} or return;
+    chomp( my $enc = read_file "$1/sas_device/$2/enclosure_identifier" );
+    push @{ $sysfs{"$enc:$slot"} }, $File::Find::name;
 }
 
+my %e2s;
+my @topology;
+
 sub topology {
-    $File::Find::name =~ m{/port-[\d:]+/expander-[\d:]+\z} or return;
-    my @topology = $File::Find::name =~ m{/expander-\d:([\d:]+)}g or return;
-    my ($bus) = $File::Find::name =~ m{/0000:0*(\d+):00\.0/host\d+/} or return;
-    map {s/^/$bus:/} @topology;
-    print join( " -> ", @topology ), "\n";
+    $File::Find::name =~ m{/enclosure\z} or return;
+    $File::Find::name =~ m{(.*/(expander-[\d:]+)/.*/(end_device-[\d:]+))}
+        or return;
+    chomp( $e2s{$2} = read_file("$1/sas_device/$3/enclosure_identifier") );
+    push @topology, [ $File::Find::name =~ m{/(expander-[\d:]+)}g ];
 }
 
 my %opt;
 
 GetOptions(
-    "configure"        => \$opt{configure},
     "topology"         => \$opt{topology},
     "show"             => \$opt{show},
     "smart"            => \$opt{smart},
     "smarterror=i"     => \$opt{smarterror},
+    "unc"              => \$opt{unc},
     "locate=s{1,}"     => \@{ $opt{locate} },
     "locate_off=s{1,}" => \@{ $opt{locate_off} },
 ) or die("$usage");
@@ -99,50 +105,64 @@ GetOptions(
     }
 }
 
-if ( $opt{configure} ) {
-    find( \&prepare, "/sys/devices" );
-    foreach ( sort_alias keys %sysfs ) {
-        my $pci = ( split m{/}, $sysfs{$_} )[5];
-        chomp( my $sas_address = read_file("$sysfs{$_}/device/sas_address") );
-        printf "alias %s\tpci-%s-sas-%s-lun-0\n", $_, $pci, $sas_address;
+if ( $opt{topology} ) {
+    find( \&topology, "/sys/devices" );
+    my %uniq;
+    foreach (@topology) {
+        my $a = join " => ", map { $e2s{$_} } @{$_};
+        print "$a\n" unless exists $uniq{$a};
+        $uniq{$a} = 1;
     }
 }
-elsif ( $opt{topology} ) {
-    find( \&topology, "/sys/devices" );
-}
 elsif ( $opt{show} ) {
-    find( \&prepare, "/sys/devices" );
+    find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
     foreach ( sort_alias keys %sysfs ) {
-        chomp( my $active = read_file("$sysfs{$_}/active") );
-        chomp( my $fault  = read_file("$sysfs{$_}/fault") );
-        chomp( my $locate = read_file("$sysfs{$_}/locate") );
-        chomp( my $status = read_file("$sysfs{$_}/status") );
-        printf "%s\tactive => %s\tfault => %s\tlocate => %s\tstatus => %s\n",
-            $_, $active, $fault, $locate, $status;
+        print "$_\t";
+        my %h;
+        foreach my $key (qw/active fault locate/) {
+            foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
+                $h{$key} |= read_file("$sysfs{$_}[$i]/$key");
+            }
+        }
+        foreach my $key (qw/active fault locate/) {
+            printf "%s\t => %d\t", $key, $h{$key};
+        }
+        %h = ();
+        foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
+            chomp( my $s = read_file("$sysfs{$_}[$i]/status") );
+            $h{$s} = 1;
+        }
+        printf "status => %s\n", join ' | ', keys %h;
     }
 }
 elsif ( $opt{smart} ) {
-    find( \&prepare, "/sys/devices" );
-
+    find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
     my $pm = Parallel::ForkManager->new(8);
     my %SMART_Attributes;
-    $pm->run_on_finish(
-        sub { %SMART_Attributes = ( %SMART_Attributes, @_[ 2, 5 ] ) } );
+    $pm->run_on_finish( sub { $SMART_Attributes{ $_[2] } = $_[5] } );
     $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
     foreach ( sort_alias keys %sysfs ) {
-        opendir my $dh, "$sysfs{$_}/device/block" or next;
-        my ($dev) = grep {/^sd/} readdir $dh or next;
+        foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
+            my $dev = <$sysfs{$_}[$i]/device/block/sd*>;
+            next unless defined $dev;
+            $dev =~ s{.*/}{};
+            unless ( read_file("$sysfs{$_}[$i]/device/vendor") =~ /^ATA/ ) {
+                print STDERR "Checking $_\t=> not SATA\n";
+                last;
+            }
 
-        # Forks and returns the pid for the child:
-        my $pid = $pm->start($_) and next;
-        chomp( my @smartctl = qx{exec smartctl -A /dev/$dev 2> /dev/null} );
-        $pm->finish( $?, \@smartctl );    # Terminates the child process
+            # Forks and returns the pid for the child:
+            my $pid = $pm->start($_) and last;
+            chomp( my @smartctl
+                    = qx{exec smartctl -A /dev/$dev 2> /dev/null} );
+            $pm->finish( $?, \@smartctl );    # Terminates the child process
+        }
     }
     $pm->wait_all_children;
 
     my @target
         = qw/Reallocated_Sector_Ct Reported_Uncorrect Command_Timeout Current_Pending_Sector Offline_Uncorrectable/;
-    print "NAME\t", join " ", @target, "\n";
+    print "NAME\t\t\t", join " ", @target, "\n" if %SMART_Attributes;
     foreach ( sort_alias keys %SMART_Attributes ) {
         map {s/^\s+//} @{ $SMART_Attributes{$_} };
         my %attr = map { ( split /\s+/, $_, 10 )[ 1, 9 ] }
@@ -161,53 +181,103 @@ elsif ( $opt{smart} ) {
         print "\n";
     }
 }
-
 elsif ( $opt{smarterror} ) {
-    find( \&prepare, "/sys/devices" );
+    find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
 
     my $pm = Parallel::ForkManager->new(8);
     my %output;
-    $pm->run_on_finish( sub { %output = ( %output, @_[ 2, 5 ] ) } );
+    $pm->run_on_finish( sub { $output{ $_[2] } = $_[5] } );
     $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
 
     foreach ( sort_alias keys %sysfs ) {
-        opendir my $dh, "$sysfs{$_}/device/block" or next;
-        my ($dev) = grep {/^sd/} readdir $dh or next;
-
-        # Forks and returns the pid for the child:
-        my $pid      = $pm->start($_) and next;
-        my $cmd      = "smartctl -i -A -l error /dev/$dev";
-        my @output   = ("$_\t$cmd\n");
-        my @smartctl = qx{$cmd 2> /dev/null};
-        if ( $? >> 8 && 2**6 ) {
-            push @output, "\n";
-            map {s/^/\t/mg} @smartctl;
-            my ( $pow, $echo );
-            foreach (@smartctl) {
-                if (/^\t(?:Device Model|Serial Number):/) {
-                    push @output, $_;
-                    next;
-                }
-                if (/Power_On_Hours.*\s(\d+)/) {
-                    $pow = $1;
-                    push @output,
-                        sprintf "\n\tPower_On_Hours: %d hours (%d days + %d hours)\n\n",
-                        $pow, $pow / 24, $pow % 24;
-                    next;
-                }
-                if (/power-on lifetime: (\d+) hours/) {
-                    if ( $1 > $pow - 24 * $opt{smarterror} ) {
-                        $echo = 1;
-                    }
-                    else {
-                        $echo = 0;
-                    }
-                }
-                push @output, $_ if $echo;
+        foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
+            my $dev = <$sysfs{$_}[$i]/device/block/sd*>;
+            next unless defined $dev;
+            $dev =~ s{.*/}{};
+            unless ( read_file("$sysfs{$_}[$i]/device/vendor") =~ /^ATA/ ) {
+                print STDERR "Checking $_\t=> not SATA\n";
+                last;
             }
-            splice @output, 1, unless grep {/power-on lifetime:/} @output;
+
+            # Forks and returns the pid for the child:
+            my $pid      = $pm->start($_) and last;
+            my @output   = ("smartctl -x -d sat /dev/disk/by-vdev/$_\n");
+            my @smartctl = qx{smartctl -i -A -l error /dev/$dev 2> /dev/null};
+            if ( $? >> 8 & 2**6 ) {
+                push @output, "\n";
+                map {s/^/\t/mg} @smartctl;
+                my ( $pow, $echo );
+                foreach (@smartctl) {
+                    if (/^\t(?:Device Model|Serial Number):/) {
+                        push @output, $_;
+                        next;
+                    }
+                    if (/Power_On_Hours.*\s(\d+)/) {
+                        $pow = $1;
+                        push @output,
+                            sprintf
+                            "\n\tPower_On_Hours: %d hours (%d days + %d hours)\n\n",
+                            $pow, $pow / 24, $pow % 24;
+                        next;
+                    }
+                    if (/power-on lifetime: (\d+) hours/) {
+                        if ( $1 > $pow - 24 * $opt{smarterror} ) {
+                            $echo = 1;
+                        }
+                        else {
+                            $echo = 0;
+                        }
+                    }
+                    push @output, $_ if $echo;
+                }
+            }
+            splice @output, 1 unless grep {/power-on lifetime:/} @output;
+            $pm->finish( $?, \@output );    # Terminates the child process
         }
-        $pm->finish( $?, \@output );    # Terminates the child process
+    }
+    $pm->wait_all_children;
+
+    foreach ( sort_alias keys %output ) {
+        print @{ $output{$_} };
+    }
+}
+elsif ( $opt{unc} ) {
+    find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
+
+    my $pm = Parallel::ForkManager->new(8);
+    my %output;
+    $pm->run_on_finish( sub { $output{ $_[2] } = $_[5] } );
+    $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
+
+    foreach ( sort_alias keys %sysfs ) {
+        foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
+            my $dev = <$sysfs{$_}[$i]/device/block/sd*>;
+            next unless defined $dev;
+            $dev =~ s{.*/}{};
+            if ( read_file("$sysfs{$_}[$i]/device/vendor") =~ /^ATA/ ) {
+                print STDERR "Checking $_\t=> not SAS\n";
+                last;
+            }
+
+            # Forks and returns the pid for the child:
+            my $pid = $pm->start($_) and last;
+            my @error = qx{smartctl -l error /dev/$dev};
+            my $unc;
+            foreach ( grep {/^(?:read|write|verify):/} @error ) {
+
+                # check Total uncorrected errors
+                $unc |= ( (split)[7] );
+            }
+            my @output = ("smartctl -x -d scsi /dev/disk/by-vdev/$_\n");
+            if ($unc) {
+                my @info = grep {/^(?:Vendor|Product|Serial number):/}
+                    qx{smartctl -i /dev/$dev};
+                splice @error, 0, 3;
+                map {s/^/\t/} @info, @error;
+                push @output, "\n", @info, "\n", @error;
+            }
+            $pm->finish( 0, \@output );    # Terminates the child process
+        }
     }
     $pm->wait_all_children;
 
@@ -217,7 +287,7 @@ elsif ( $opt{smarterror} ) {
 }
 elsif ( @{ $opt{locate} } ) {
     my @target;
-    find( \&prepare, "/sys/devices" );
+    find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
     foreach ( @{ $opt{locate} } ) {
         my $quotemeta = quotemeta;
         if ( exists $sysfs{$_} ) {
@@ -235,18 +305,20 @@ elsif ( @{ $opt{locate} } ) {
         }
     }
     foreach (@target) {
-        my $filename = "$sysfs{$_}/locate";
-        if ( write_file( $filename, 1 ) ) {
-            print "$_ => 1\n";
-        }
-        else {
-            print STDERR "Can't write to $filename\n";
+        foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
+            my $filename = "$sysfs{$_}[$i]/locate";
+            if ( write_file( $filename, 1 ) ) {
+                print "$_\[$i] => 1\n";
+            }
+            else {
+                print STDERR "Can't write to $filename\n";
+            }
         }
     }
 }
 elsif ( @{ $opt{locate_off} } ) {
     my @target;
-    find( \&prepare, "/sys/devices" );
+    find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
     foreach ( @{ $opt{locate_off} } ) {
         my $quotemeta = quotemeta;
         if ( exists $sysfs{$_} ) {
@@ -264,12 +336,14 @@ elsif ( @{ $opt{locate_off} } ) {
         }
     }
     foreach (@target) {
-        my $filename = "$sysfs{$_}/locate";
-        if ( write_file( $filename, 0 ) ) {
-            print "$_ => 0\n";
-        }
-        else {
-            print STDERR "Can't write to $filename\n";
+        foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
+            my $filename = "$sysfs{$_}[$i]/locate";
+            if ( write_file( $filename, 0 ) ) {
+                print "$_\[$i] => 0\n";
+            }
+            else {
+                print STDERR "Can't write to $filename\n";
+            }
         }
     }
 }
