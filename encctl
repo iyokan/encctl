@@ -200,7 +200,7 @@ elsif ( $opt{smarterror} ) {
             # Forks and returns the pid for the child:
             my $pid      = $pm->start($_) and last;
             my @output   = ("smartctl -x -d sat /dev/disk/by-vdev/$_\n");
-            my @smartctl = qx{smartctl -i -A -l error /dev/$dev 2> /dev/null};
+            my @smartctl = qx{exec smartctl -i -A -l error /dev/$dev 2> /dev/null};
             if ( $? >> 8 & 2**6 ) {
                 push @output, "\n";
                 map {s/^/\t/mg} @smartctl;
@@ -258,7 +258,7 @@ elsif ( $opt{unc} ) {
 
             # Forks and returns the pid for the child:
             my $pid = $pm->start($_) and last;
-            my @error = qx{smartctl -l error /dev/$dev};
+            my @error = qx{exec smartctl -l error /dev/$dev};
             my $unc;
             foreach ( grep {/^(?:read|write|verify):/} @error ) {
 
@@ -268,7 +268,7 @@ elsif ( $opt{unc} ) {
             my @output = ("smartctl -x -d scsi /dev/disk/by-vdev/$_\n");
             if ($unc) {
                 my @info = grep {/^(?:Vendor|Product|Serial number):/}
-                    qx{smartctl -i /dev/$dev};
+                    qx{exec smartctl -i /dev/$dev};
                 splice @error, 0, 3;
                 map {s/^/\t/} @info, @error;
                 push @output, "\n", @info, "\n", @error;
