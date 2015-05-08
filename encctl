@@ -143,9 +143,8 @@ elsif ( $opt{smart} ) {
     $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
     foreach ( sort_alias keys %sysfs ) {
         foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
-            my $dev = <$sysfs{$_}[$i]/device/block/sd*>;
-            next unless defined $dev;
-            $dev =~ s{.*/}{};
+            opendir my $dh, "$sysfs{$_}[$i]/device/block" or next;
+            my ($dev) = grep {/^sd/} readdir $dh or next;
             unless ( read_file("$sysfs{$_}[$i]/device/vendor") =~ /^ATA/ ) {
                 print STDERR "Checking $_\t=> not SATA\n";
                 last;
@@ -191,9 +190,8 @@ elsif ( $opt{smarterror} ) {
 
     foreach ( sort_alias keys %sysfs ) {
         foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
-            my $dev = <$sysfs{$_}[$i]/device/block/sd*>;
-            next unless defined $dev;
-            $dev =~ s{.*/}{};
+            opendir my $dh, "$sysfs{$_}[$i]/device/block" or next;
+            my ($dev) = grep {/^sd/} readdir $dh or next;
             unless ( read_file("$sysfs{$_}[$i]/device/vendor") =~ /^ATA/ ) {
                 print STDERR "Checking $_\t=> not SATA\n";
                 last;
@@ -251,9 +249,8 @@ elsif ( $opt{unc} ) {
 
     foreach ( sort_alias keys %sysfs ) {
         foreach my $i ( 0 .. $#{ $sysfs{$_} } ) {
-            my $dev = <$sysfs{$_}[$i]/device/block/sd*>;
-            next unless defined $dev;
-            $dev =~ s{.*/}{};
+            opendir my $dh, "$sysfs{$_}[$i]/device/block" or next;
+            my ($dev) = grep {/^sd/} readdir $dh or next;
             if ( read_file("$sysfs{$_}[$i]/device/vendor") =~ /^ATA/ ) {
                 print STDERR "Checking $_\t=> not SAS\n";
                 last;
