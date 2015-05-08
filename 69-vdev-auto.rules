@@ -1,0 +1,9 @@
+#
+# /etc/udev/rules.d/69-vdev-auto.rules
+#
+
+ENV{DEVTYPE}=="disk", IMPORT{program}="/etc/udev/vdev_id_auto"
+
+KERNEL=="*[!0-9]", ENV{SUBSYSTEM}=="block", ENV{ID_VDEV}=="?*", SYMLINK+="$env{ID_VDEV_PATH}", OPTIONS+="link_priority=20"
+KERNEL=="*[0-9]", ENV{SUBSYSTEM}=="block", ENV{DEVTYPE}=="partition", ENV{ID_VDEV}=="?*", SYMLINK+="$env{ID_VDEV_PATH}-part%n"
+KERNEL=="dm-[0-9]*", ENV{SUBSYSTEM}=="block", ENV{ID_VDEV}=="?*", SYMLINK+="$env{ID_VDEV_PATH}", OPTIONS+="link_priority=10"

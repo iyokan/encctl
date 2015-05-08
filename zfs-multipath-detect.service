@@ -1,0 +1,15 @@
+[Unit]
+DefaultDependencies=no
+Requires=systemd-udev-settle.service multipathd.service
+Before=zfs-import-cache.service zfs-import-cache.service
+After=systemd-udev-settle.service multipathd.service
+ConditionPathExists=/etc/multipath.conf
+ConditionKernelCommandLine=!nompath
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/multipath -v 1 -r
+
+[Install]
+WantedBy=zfs.target

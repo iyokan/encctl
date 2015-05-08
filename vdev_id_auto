@@ -1,0 +1,84 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use File::Slurp;                # perl-File-Slurp
+
+sub enclosure_logical_id {
+    my $devpath = shift;
+    $devpath =~ m{(.*(end_device-[\d:]+))/target}
+        or die "$devpath: unrecognized\n";
+    chomp( my $enclosure_identifier
+               = read_file("/sys$1/sas_device/$2/enclosure_identifier") );
+    return $enclosure_identifier;
+}
+
+sub slot {
+    my $devpath = shift;
+    $devpath =~ m{(.*)/block/sd[^/]+$}
+        or die "$devpath: unrecognized\n";
+    my ($slot) = </sys$1/enclosure_device:Slot*> or return;
+    if ( $slot =~ /Slot 0*(\d+)/ ) {
+        return $1 - 1;          # Supermicro SAS2x
+    } elsif ( $slot =~ /Slot0*(\d+)/ ) {
+        return $1;              # Supermicro SAS3x
+    }
+    return;
+}
+
+# for debug
+unless ( defined $ENV{"DEVPATH"} ) {
+    defined $ARGV[0] or die "Usage: $0 <sd[a-z]+ | dm-[0-9]+>";
+    open my $udevadm, '-|', qw/udevadm info -q env -n/, $ARGV[0] or die;
+    while (<$udevadm>) {
+        chomp;
+        my ( $key, $value ) = split /=/;
+        $ENV{$key} = $value unless exists $ENV{$key};
+    }
+    close $udevadm;
+}
+
+# main
+if ( defined $ENV{"DM_NAME"} ) {
+    exit unless defined $ENV{"MPATH_SBIN_PATH"};
+    system "$ENV{MPATH_SBIN_PATH}/multipath -l $ENV{DEVNAME} >> /tmp/log.txt";
+    my @multipath;
+    foreach (1..3) {
+        open my $multipath, '-|', "$ENV{MPATH_SBIN_PATH}/multipath", "-l", $ENV{"DEVNAME"} or die;
+        last if @multipath = <$multipath>;
+        sleep 1;
+    }
+    foreach ( grep {/running/} @multipath ) {
+        s/^.//;
+        my $name = ( (split)[2] );
+        my $devpath = `udevadm info -q path -n $name`;
+        $devpath =~ m{(.*/expander-[\d:]+)};
+        foreach ( 1 .. 3 ) {
+            my @glob = </sys$1/port-*/end_device-*/target*/[0-9]*/enclosure>;
+            if (@glob) {
+                last;
+            } else {
+                sleep 5;
+            }
+        }
+        my $enclosure_logical_id = enclosure_logical_id($devpath);
+        my $slot                 = slot($devpath);
+        if ( defined $enclosure_logical_id && defined $slot ) {
+            printf "ID_VDEV=%s:%s\n", $enclosure_logical_id, $slot;
+            printf "ID_VDEV_PATH=disk/by-vdev/%s:%s\n",
+                $enclosure_logical_id, $slot;
+            last;
+        }
+    }
+} else {
+    exit
+        if ( defined $ENV{"DM_MULTIPATH_DEVICE_PATH"}
+                 && $ENV{"DM_MULTIPATH_DEVICE_PATH"} == 1 );
+    my $enclosure_logical_id = enclosure_logical_id( $ENV{"DEVPATH"} );
+    my $slot                 = slot( $ENV{"DEVPATH"} );
+    if ( defined $enclosure_logical_id && defined $slot ) {
+        printf "ID_VDEV=%s:%s\n", $enclosure_logical_id, $slot;
+        printf "ID_VDEV_PATH=disk/by-vdev/%s:%s\n", $enclosure_logical_id,
+            $slot;
+    }
+}
