@@ -35,12 +35,12 @@ my $usage = <<EOF;
 
 - Locate a disk drive on an enclosure
 
-    encctl --locate 3:0:0       # locate 3:0:0
-    encctl --locate 3:0         # locate 3:0:*
-    encctl --locate all         # locate *:*:*
-    encctl --locate_off 3:0:0   # unlocate 3:0:0
-    encctl --locate_off 3:0     # unlocate 3:0:*
-    encctl --locate_off all     # unlocate *:*:*
+    encctl --locate 0xXXXXXXXXXXXXXXXX:0        # locate 0xXXXXXXXXXXXXXXXX:0
+    encctl --locate 0xXXXXXXXXXXXXXXXX          # locate 0xXXXXXXXXXXXXXXXX:*
+    encctl --locate all                         # locate *:*
+    encctl --locate_off 0xXXXXXXXXXXXXXXXX:0    # unlocate 0xXXXXXXXXXXXXXXXX:0
+    encctl --locate_off 0xXXXXXXXXXXXXXXXX      # unlocate 0xXXXXXXXXXXXXXXXX:*
+    encctl --locate_off all                     # unlocate *:*
 
 EOF
 
