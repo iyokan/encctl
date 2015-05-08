@@ -24,44 +24,44 @@
 
 ## Install
 
-+ install ZFS on Linux
+* install ZFS on Linux
 
 See http://zfsonlinux.org/epel.html
 
-+ setup multipath as needed
+* setup multipath as needed
 
 ```
 # mpathconf --enable --with_multipathd y
 ```
 
-+ install encctl
+* install encctl
 
 ```
 # make install
 ```
 
-+ reload udev rules
+* reload udev rules
 
 ```
 # make reload
 ```
 
-+ check vdev alias
+* check vdev alias
 
 ```
 # ls -l /dev/disk/by-vdev
 ```
 
-+ create zpool
+* create zpool
 
-++ mirror pool
+  * mirror pool
 
 ```
 # echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} | xargs -n 2 echo mirror`
 # echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} | xargs -n 2 echo mirror` | sh -x
 ```
 
-++ raidz2 pool
+  * raidz2 pool
 
 ```
 # echo zpool create tank `echo 0xXXXXXXXXXXXXXXXX:{0..11} 0xYYYYYYYYYYYYYYYY:{0..11} | xargs -n 6 echo raidz2`
@@ -70,31 +70,31 @@ See http://zfsonlinux.org/epel.html
 
 ## Usage
 
-+ check enclosure status
+* check enclosure status
 
 ```
 # encctl --show
 ```
 
-+ check SMART Attribute (SATA)
+* check SMART Attribute (SATA)
 
 ```
 # encctl --smart
 ```
 
-+ check SMART error log (SATA)
+* check SMART error log (SATA)
 
 ```
 # encctl --smarterror 30 (check last 30 days error)
 ```
 
-+ check uncorrectable error (SAS)
+* check uncorrectable error (SAS)
 
 ```
 # encctl --unc
 ```
 
-+ locate indicator
+* locate indicator
 
 ```
 # encctl --locate 0xXXXXXXXXXXXXXXXX:0     # locate 0xXXXXXXXXXXXXXXXX:0
