@@ -17,4 +17,4 @@ install:
 	if [ -d /etc/systemd/system ]; then install -m 644 zfs-multipath-detect.service /etc/systemd/system; systemctl enable zfs-multipath-detect.service; fi
 
 reload:
-	perl -c /etc/udev/vdev_id_auto && udevadm trigger
+	perl -c /etc/udev/vdev_id_auto && udevadm trigger && udevadm settle
