@@ -29,6 +29,10 @@ my $usage = <<EOF;
 
     encctl --smarterror N
 
+- Show S.M.A.R.T error log. (SATA)
+
+    encctl --smarterror 0
+
 - Check Total uncorrected errors (SAS)
 
     encctl --unc
@@ -219,7 +223,7 @@ elsif ( $opt{smarterror} ) {
                         next;
                     }
                     if (/power-on lifetime: (\d+) hours/) {
-                        if ( $1 > $pow - 24 * $opt{smarterror} ) {
+                        if ( $opt{smarterror} == 0 || $1 > $pow - 24 * $opt{smarterror} ) {
                             $echo = 1;
                         }
                         else {
