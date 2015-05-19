@@ -184,7 +184,7 @@ elsif ( $opt{smart} ) {
         print "\n";
     }
 }
-elsif ( $opt{smarterror} ) {
+elsif ( defined $opt{smarterror} ) {
     find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
 
     my $pm = Parallel::ForkManager->new(8);
