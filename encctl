@@ -58,10 +58,10 @@ my %sysfs;
 sub prepare {
     my $slot;
     if (m{^Slot (\d+)\z}) {
-        $slot = $1 - 1;    # Supermicro SAS2
+        $slot = sprintf "%02d", $1 - 1;    # Supermicro SAS2
     }
     elsif (m{^Slot0*(\d+)\z}) {
-        $slot = $1;        # Supermicro SAS3
+        $slot = sprintf "%02d", $1;        # Supermicro SAS3
     }
     else {
         return;
@@ -156,8 +156,7 @@ elsif ( $opt{smart} ) {
 
             # Forks and returns the pid for the child:
             my $pid = $pm->start($_) and last;
-            chomp( my @smartctl
-                    = qx{exec smartctl -A /dev/$dev 2> /dev/null} );
+            chomp( my @smartctl = qx{exec smartctl -A /dev/$dev 2> /dev/null} );
             $pm->finish( $?, \@smartctl );    # Terminates the child process
         }
     }
@@ -168,8 +167,7 @@ elsif ( $opt{smart} ) {
     print "NAME\t\t\t", join " ", @target, "\n" if %SMART_Attributes;
     foreach ( sort_alias keys %SMART_Attributes ) {
         map {s/^\s+//} @{ $SMART_Attributes{$_} };
-        my %attr = map { ( split /\s+/, $_, 10 )[ 1, 9 ] }
-            @{ $SMART_Attributes{$_} };
+        my %attr = map { ( split /\s+/, $_, 10 )[ 1, 9 ] } @{ $SMART_Attributes{$_} };
         print "$_\t";
         foreach my $target (@target) {
             my $value = defined $attr{$target} ? $attr{$target} : "N/A";
@@ -217,8 +215,7 @@ elsif ( defined $opt{smarterror} ) {
                     if (/Power_On_Hours.*\s(\d+)/) {
                         $pow = $1;
                         push @output,
-                            sprintf
-                            "\n\tPower_On_Hours: %d hours (%d days + %d hours)\n\n",
+                            sprintf "\n\tPower_On_Hours: %d hours (%d days + %d hours)\n\n",
                             $pow, $pow / 24, $pow % 24;
                         next;
                     }
@@ -271,8 +268,7 @@ elsif ( $opt{unc} ) {
             }
             my @output = ("smartctl -x -d scsi /dev/disk/by-vdev/$_\n");
             if ($unc) {
-                my @info = grep {/^(?:Vendor|Product|Serial number):/}
-                    qx{exec smartctl -i /dev/$dev};
+                my @info = grep {/^(?:Vendor|Product|Serial number):/} qx{exec smartctl -i /dev/$dev};
                 splice @error, 0, 3;
                 map {s/^/\t/} @info, @error;
                 push @output, "\n", @info, "\n", @error;
