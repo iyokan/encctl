@@ -141,7 +141,7 @@ elsif ( $opt{show} ) {
 }
 elsif ( $opt{smart} ) {
     find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
-    my $pm = Parallel::ForkManager->new(8);
+    my $pm = Parallel::ForkManager->new(22);
     my %SMART_Attributes;
     $pm->run_on_finish( sub { $SMART_Attributes{ $_[2] } = $_[5] } );
     $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
@@ -156,7 +156,7 @@ elsif ( $opt{smart} ) {
 
             # Forks and returns the pid for the child:
             my $pid = $pm->start($_) and last;
-            chomp( my @smartctl = qx{exec smartctl -A /dev/$dev 2> /dev/null} );
+            chomp( my @smartctl = qx{exec smartctl -s on -A /dev/$dev 2> /dev/null} );
             $pm->finish( $?, \@smartctl );    # Terminates the child process
         }
     }
@@ -185,7 +185,7 @@ elsif ( $opt{smart} ) {
 elsif ( defined $opt{smarterror} ) {
     find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
 
-    my $pm = Parallel::ForkManager->new(8);
+    my $pm = Parallel::ForkManager->new(22);
     my %output;
     $pm->run_on_finish( sub { $output{ $_[2] } = $_[5] } );
     $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
@@ -202,7 +202,7 @@ elsif ( defined $opt{smarterror} ) {
             # Forks and returns the pid for the child:
             my $pid      = $pm->start($_) and last;
             my @output   = ("smartctl -x -d sat /dev/disk/by-vdev/$_\n");
-            my @smartctl = qx{exec smartctl -i -A -l error /dev/$dev 2> /dev/null};
+            my @smartctl = qx{exec smartctl -s on -i -A -l error /dev/$dev 2> /dev/null};
             if ( $? >> 8 & 2**6 ) {
                 push @output, "\n";
                 map {s/^/\t/mg} @smartctl;
@@ -243,7 +243,7 @@ elsif ( defined $opt{smarterror} ) {
 elsif ( $opt{unc} ) {
     find( \&prepare, map { abs_path $_ } </sys/class/enclosure/*> );
 
-    my $pm = Parallel::ForkManager->new(8);
+    my $pm = Parallel::ForkManager->new(22);
     my %output;
     $pm->run_on_finish( sub { $output{ $_[2] } = $_[5] } );
     $pm->run_on_start( sub { printf STDERR "Checking %s\n", $_[1] } );
