@@ -33,7 +33,7 @@ sub slot {
 # for debug
 unless ( defined $ENV{"DEVPATH"} ) {
     defined $ARGV[0] or die "Usage: $0 <sd[a-z]+ | dm-[0-9]+>";
-    open my $udevadm, '-|', qw/udevadm info -q env -n/, $ARGV[0] or die;
+    open my $udevadm, '-|', qw/udevadm info -q property -n/, $ARGV[0] or die;
     while (<$udevadm>) {
         chomp;
         my ( $key, $value ) = split /=/;
@@ -43,7 +43,6 @@ unless ( defined $ENV{"DEVPATH"} ) {
 }
 
 # main
-exit unless $ENV{"DEVPATH"} =~ /expander/;
 if ( defined $ENV{"DM_NAME"} ) {
     exit unless defined $ENV{"MPATH_SBIN_PATH"};
     my @multipath;
@@ -66,17 +65,19 @@ if ( defined $ENV{"DM_NAME"} ) {
                 sleep 5;
             }
         }
+        exit unless $devpath =~ /expander/;
         my $enclosure_logical_id = enclosure_logical_id($devpath);
         my $slot                 = slot($devpath);
         if ( defined $enclosure_logical_id && defined $slot ) {
-            printf "ID_VDEV=%s:%s\n",                   $enclosure_logical_id, $slot;
-            printf "ID_VDEV_PATH=disk/by-vdev/%s:%s\n", $enclosure_logical_id, $slot;
+            printf "ID_VDEV=%s:%02d\n",                   $enclosure_logical_id, $slot;
+            printf "ID_VDEV_PATH=disk/by-vdev/%s:%02d\n", $enclosure_logical_id, $slot;
             last;
         }
     }
 }
 else {
     exit if ( defined $ENV{"DM_MULTIPATH_DEVICE_PATH"} && $ENV{"DM_MULTIPATH_DEVICE_PATH"} == 1 );
+    exit unless $ENV{"DEVPATH"} =~ /expander/;
     my $enclosure_logical_id = enclosure_logical_id( $ENV{"DEVPATH"} );
     my $slot                 = slot( $ENV{"DEVPATH"} );
     if ( defined $enclosure_logical_id && defined $slot ) {
