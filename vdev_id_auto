@@ -51,7 +51,7 @@ if ( defined $ENV{"DM_NAME"} ) {
         last if @multipath = <$multipath>;
         sleep 1;
     }
-    foreach ( grep {/running/} @multipath ) {
+    foreach ( grep {/running| active /} @multipath ) {
         s/^.//;
         my $name = ( (split)[2] );
         my $devpath = `udevadm info -q path -n $name`;
