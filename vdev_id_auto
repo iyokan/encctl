@@ -24,7 +24,6 @@ sub slot {
                 return $1;      # Supermicro SAS3x
             }
             elsif ( $slot =~ /Drive Slot #(\d+)_/ ) {
-                printf STDERR "%s\n", ${slot};
                 return $1;	# HGST JBOD
             }
             return;
