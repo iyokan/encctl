@@ -16,12 +16,15 @@ sub slot {
     my $devpath = shift;
     $devpath =~ m{(.*)/block/sd[^/]+$} or die "$devpath: unrecognized\n";
     for ( 1 .. 10 ) {
-        if ( my ($slot) = </sys$1/enclosure_device:*Slot*> ) {
+        if ( my ($slot) = </sys$1/enclosure_device:*S[Ll][Oo][Tt]*> ) {
             if ( $slot =~ /Slot 0*(\d+)/ ) {
                 return $1 - 1;  # Supermicro SAS2x
             }
             elsif ( $slot =~ /Slot0*(\d+)/ ) {
                 return $1;      # Supermicro SAS3x
+            }
+            elsif ( $slot =~ /SLOT (\d+),/ ) {
+                return $1;	# HGST H4060-J
             }
             elsif ( $slot =~ /Drive Slot #(\d+)_/ ) {
                 return $1;	# HGST JBOD

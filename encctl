@@ -63,6 +63,9 @@ sub prepare {
     elsif (m{^Slot0*(\d+)\z}) {
         $slot = sprintf "%02d", $1;        # Supermicro SAS3
     }
+    elsif (m{^SLOT (\d+),.{20}\z}) {
+        $slot = sprintf "%02d", $1;        # HGST H4060-J
+    }
     elsif (m{^Drive Slot #(\d+)_}) {
         $slot = sprintf "%02d", $1;        # HGST JBOD
     }
