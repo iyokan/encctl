@@ -50,7 +50,7 @@ unless ( defined $ENV{"DEVPATH"} ) {
 
 # main
 if ( defined $ENV{"DM_NAME"} ) {
-    exit unless defined $ENV{"MPATH_SBIN_PATH"};
+    exit unless defined $ENV{"MPATH_DEVICE_READY"};
     opendir my $dh, "/sys$ENV{DEVPATH}/slaves" or exit;
     for my $name ( grep {/\Asd/} readdir($dh) ) {
         my $devpath = `udevadm info -q path -n $name`;
